@@ -157,6 +157,7 @@ namespace DotNetty.Handlers.Tls
                         ? _pendingUnencryptedWrites.Remove(alloc, wrapDataSize, promise)
                         : _pendingUnencryptedWrites.RemoveFirst(promise);
                     if (buf is null) { break; }
+                    if (_sslStream is null) { break; }
 
                     try
                     {

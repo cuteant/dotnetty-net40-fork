@@ -54,7 +54,7 @@ namespace DotNetty.Handlers.Tls
         private readonly Func<IChannelHandlerContext, string, X509CertificateCollection, X509Certificate, string[], X509Certificate2> _userCertSelector;
 #endif
 
-        private readonly SslStream _sslStream;
+        private SslStream _sslStream;
         private readonly MediationStream _mediationStream;
         private readonly DefaultPromise _closeFuture;
 
@@ -129,14 +129,14 @@ namespace DotNetty.Handlers.Tls
         }
 
         // using workaround mentioned here: https://github.com/dotnet/corefx/issues/4510
-        public X509Certificate2 LocalCertificate => _sslStream.LocalCertificate as X509Certificate2 ?? new X509Certificate2(_sslStream.LocalCertificate?.Export(X509ContentType.Cert));
+        public X509Certificate2 LocalCertificate => _sslStream is object ? _sslStream.LocalCertificate as X509Certificate2 ?? new X509Certificate2(_sslStream.LocalCertificate?.Export(X509ContentType.Cert)) : null;
 
-        public X509Certificate2 RemoteCertificate => _sslStream.RemoteCertificate as X509Certificate2 ?? new X509Certificate2(_sslStream.RemoteCertificate?.Export(X509ContentType.Cert));
+        public X509Certificate2 RemoteCertificate => _sslStream is object ? _sslStream.RemoteCertificate as X509Certificate2 ?? new X509Certificate2(_sslStream.RemoteCertificate?.Export(X509ContentType.Cert)) : null;
 
         public bool IsServer => _isServer;
 
 #if NETCOREAPP_2_0_GREATER || NETSTANDARD_2_0_GREATER
-        public SslApplicationProtocol NegotiatedApplicationProtocol => _sslStream.NegotiatedApplicationProtocol;
+        public SslApplicationProtocol NegotiatedApplicationProtocol => _sslStream is object ? _sslStream.NegotiatedApplicationProtocol : default;
 #endif
 
         public override void ChannelActive(IChannelHandlerContext context)
@@ -221,7 +221,9 @@ namespace DotNetty.Handlers.Tls
         {
             //CloseOutboundAndChannel(context, promise, false);
             _ = _closeFuture.TryComplete();
-            _sslStream.Dispose();
+            _mediationStream.Dispose();
+            _sslStream?.Dispose();
+            _sslStream = null;
             base.Close(context, promise);
         }
 
@@ -255,7 +257,8 @@ namespace DotNetty.Handlers.Tls
                 {
                     try
                     {
-                        _sslStream.Dispose();
+                        _sslStream?.Dispose();
+                        _sslStream = null;
                     }
                     catch (Exception)
                     {

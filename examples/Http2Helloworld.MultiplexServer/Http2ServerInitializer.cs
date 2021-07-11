@@ -61,7 +61,7 @@
                     SslApplicationProtocol.Http11
                 })
             };
-            tlsSettings.AllowAnyClientCertificate();
+            //tlsSettings.AllowAnyClientCertificate();
             ch.Pipeline.AddLast(new TlsHandler(tlsSettings));
             ch.Pipeline.AddLast(new Http2OrHttpHandler());
         }

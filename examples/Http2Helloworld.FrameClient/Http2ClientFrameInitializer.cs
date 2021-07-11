@@ -31,7 +31,7 @@
                     ApplicationProtocols = new List<SslApplicationProtocol>(new[]
                     {
                         SslApplicationProtocol.Http2,
-                        //SslApplicationProtocol.Http11
+                        SslApplicationProtocol.Http11
                     })
                 }.AllowAnyServerCertificate();
                 pipeline.AddLast("tls", new TlsHandler(tlsSettings));
