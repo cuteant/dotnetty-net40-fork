@@ -39,11 +39,22 @@ namespace DotNetty.Handlers.Tls
         private static readonly IInternalLogger s_logger = InternalLoggerFactory.GetInstance<TlsHandler>();
         private static readonly Exception s_sslStreamClosedException = new IOException("SSLStream closed already");
 
-        public static TlsHandler Client(string targetHost) => new(new ClientTlsSettings(targetHost));
+        public static TlsHandler Client(string targetHost, bool allowAnyServerCertificate = false)
+        {
+            var tlsSettings = new ClientTlsSettings(targetHost);
+            if (allowAnyServerCertificate) { _ = tlsSettings.AllowAnyServerCertificate(); }
+            return new(tlsSettings);
+        }
 
-        public static TlsHandler Client(string targetHost, X509Certificate clientCertificate) => new(new ClientTlsSettings(targetHost, new List<X509Certificate> { clientCertificate }));
+        public static TlsHandler Client(string targetHost, X509Certificate clientCertificate)
+            => new(new ClientTlsSettings(targetHost, new List<X509Certificate> { clientCertificate }));
 
-        public static TlsHandler Server(X509Certificate certificate) => new(new ServerTlsSettings(certificate));
+        public static TlsHandler Server(X509Certificate certificate, bool allowAnyClientCertificate = false)
+        {
+            var tlsSettings = new ServerTlsSettings(certificate);
+            if (allowAnyClientCertificate) { _ = tlsSettings.AllowAnyClientCertificate(); }
+            return new(tlsSettings);
+        }
 
         private static SslStream CreateSslStream(TlsSettings settings, Stream stream)
         {

@@ -115,9 +115,10 @@ namespace DotNetty.Handlers.Tls
         public Func<X509Certificate2, X509Chain, SslPolicyErrors, bool> ClientCertificateValidation { get; set; }
 
         /// <summary>Overrides the current <see cref="ClientCertificateValidation"/> callback and allows any client certificate.</summary>
-        public void AllowAnyClientCertificate()
+        public ServerTlsSettings AllowAnyClientCertificate()
         {
             ClientCertificateValidation = s_clientCertificateValidation;
+            return this;
         }
 
 #if NETCOREAPP_2_0_GREATER || NETSTANDARD_2_0_GREATER
