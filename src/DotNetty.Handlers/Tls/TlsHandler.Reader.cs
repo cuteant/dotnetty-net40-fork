@@ -27,7 +27,6 @@ namespace DotNetty.Handlers.Tls
     using System.Diagnostics;
     using System.Runtime.CompilerServices;
     using System.Runtime.ExceptionServices;
-    using System.Threading;
     using System.Threading.Tasks;
     using DotNetty.Buffers;
     using DotNetty.Common.Utilities;
@@ -114,10 +113,10 @@ namespace DotNetty.Handlers.Tls
                 {
                     if (_framing == Framing.Unified || _framing == Framing.Unknown)
                     {
-                        _framing = DetectFraming(input.UnreadSpan);
+                        _framing = DetectFraming(input);
                     }
                 }
-                packetLength = GetFrameSize(_framing, input.UnreadSpan);
+                packetLength = GetFrameSize(_framing, input);
                 if ((uint)packetLength > SharedConstants.TooBigOrNegative) // < 0
                 {
                     HandleInvalidTlsFrameSize(input);
@@ -599,194 +598,6 @@ namespace DotNetty.Handlers.Tls
             Debug.Assert(length > 0);
             outputBuffer.Advance(length);
             output.Add(outputBuffer);
-        }
-
-        // We need at least 5 bytes to determine what we have.
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private Framing DetectFraming(in ReadOnlySpan<byte> bytes)
-        {
-            /* PCTv1.0 Hello starts with
-             * RECORD_LENGTH_MSB  (ignore)
-             * RECORD_LENGTH_LSB  (ignore)
-             * PCT1_CLIENT_HELLO  (must be equal)
-             * PCT1_CLIENT_VERSION_MSB (if version greater than PCTv1)
-             * PCT1_CLIENT_VERSION_LSB (if version greater than PCTv1)
-             *
-             * ... PCT hello ...
-             */
-
-            /* Microsoft Unihello starts with
-             * RECORD_LENGTH_MSB  (ignore)
-             * RECORD_LENGTH_LSB  (ignore)
-             * SSL2_CLIENT_HELLO  (must be equal)
-             * SSL2_CLIENT_VERSION_MSB (if version greater than SSLv2) ( or v3)
-             * SSL2_CLIENT_VERSION_LSB (if version greater than SSLv2) ( or v3)
-             *
-             * ... SSLv2 Compatible Hello ...
-             */
-
-            /* SSLv2 CLIENT_HELLO starts with
-             * RECORD_LENGTH_MSB  (ignore)
-             * RECORD_LENGTH_LSB  (ignore)
-             * SSL2_CLIENT_HELLO  (must be equal)
-             * SSL2_CLIENT_VERSION_MSB (if version greater than SSLv2) ( or v3)
-             * SSL2_CLIENT_VERSION_LSB (if version greater than SSLv2) ( or v3)
-             *
-             * ... SSLv2 CLIENT_HELLO ...
-             */
-
-            /* SSLv2 SERVER_HELLO starts with
-             * RECORD_LENGTH_MSB  (ignore)
-             * RECORD_LENGTH_LSB  (ignore)
-             * SSL2_SERVER_HELLO  (must be equal)
-             * SSL2_SESSION_ID_HIT (ignore)
-             * SSL2_CERTIFICATE_TYPE (ignore)
-             * SSL2_CLIENT_VERSION_MSB (if version greater than SSLv2) ( or v3)
-             * SSL2_CLIENT_VERSION_LSB (if version greater than SSLv2) ( or v3)
-             *
-             * ... SSLv2 SERVER_HELLO ...
-             */
-
-            /* SSLv3 Type 2 Hello starts with
-              * RECORD_LENGTH_MSB  (ignore)
-              * RECORD_LENGTH_LSB  (ignore)
-              * SSL2_CLIENT_HELLO  (must be equal)
-              * SSL2_CLIENT_VERSION_MSB (if version greater than SSLv3)
-              * SSL2_CLIENT_VERSION_LSB (if version greater than SSLv3)
-              *
-              * ... SSLv2 Compatible Hello ...
-              */
-
-            /* SSLv3 Type 3 Hello starts with
-             * 22 (HANDSHAKE MESSAGE)
-             * VERSION MSB
-             * VERSION LSB
-             * RECORD_LENGTH_MSB  (ignore)
-             * RECORD_LENGTH_LSB  (ignore)
-             * HS TYPE (CLIENT_HELLO)
-             * 3 bytes HS record length
-             * HS Version
-             * HS Version
-             */
-
-            /* SSLv2 message codes
-             * SSL_MT_ERROR                0
-             * SSL_MT_CLIENT_HELLO         1
-             * SSL_MT_CLIENT_MASTER_KEY    2
-             * SSL_MT_CLIENT_FINISHED      3
-             * SSL_MT_SERVER_HELLO         4
-             * SSL_MT_SERVER_VERIFY        5
-             * SSL_MT_SERVER_FINISHED      6
-             * SSL_MT_REQUEST_CERTIFICATE  7
-             * SSL_MT_CLIENT_CERTIFICATE   8
-             */
-
-            int version = -1;
-
-            // If the first byte is SSL3 HandShake, then check if we have a SSLv3 Type3 client hello.
-            if (bytes[0] == (byte)ContentType.Handshake || bytes[0] == (byte)ContentType.AppData
-                || bytes[0] == (byte)ContentType.Alert)
-            {
-                if (bytes.Length < 3)
-                {
-                    return Framing.Invalid;
-                }
-
-                version = (bytes[1] << 8) | bytes[2];
-                if (version < 0x300 || version >= 0x500)
-                {
-                    return Framing.Invalid;
-                }
-
-                //
-                // This is an SSL3 Framing
-                //
-                return Framing.SinceSSL3;
-            }
-
-            if (bytes.Length < 3)
-            {
-                return Framing.Invalid;
-            }
-
-            if (bytes[2] > 8)
-            {
-                return Framing.Invalid;
-            }
-
-            if (bytes[2] == 0x1)  // SSL_MT_CLIENT_HELLO
-            {
-                if (bytes.Length >= 5)
-                {
-                    version = (bytes[3] << 8) | bytes[4];
-                }
-            }
-            else if (bytes[2] == 0x4) // SSL_MT_SERVER_HELLO
-            {
-                if (bytes.Length >= 7)
-                {
-                    version = (bytes[5] << 8) | bytes[6];
-                }
-            }
-
-            if (version != -1)
-            {
-                // If this is the first packet, the client may start with an SSL2 packet
-                // but stating that the version is 3.x, so check the full range.
-                // For the subsequent packets we assume that an SSL2 packet should have a 2.x version.
-                if (_framing == Framing.Unknown)
-                {
-                    if (version != 0x0002 && (version < 0x200 || version >= 0x500))
-                    {
-                        return Framing.Invalid;
-                    }
-                }
-                else
-                {
-                    if (version != 0x0002)
-                    {
-                        return Framing.Invalid;
-                    }
-                }
-            }
-
-            // When server has replied the framing is already fixed depending on the prior client packet
-            if (!_isServer || _framing == Framing.Unified)
-            {
-                return Framing.BeforeSSL3;
-            }
-
-            return Framing.Unified; // Will use Ssl2 just for this frame.
-        }
-
-        // Returns TLS Frame size.
-        private static int GetFrameSize(Framing framing, in ReadOnlySpan<byte> buffer)
-        {
-            int payloadSize = -1;
-            switch (framing)
-            {
-                case Framing.Unified:
-                case Framing.BeforeSSL3:
-                    // Note: Cannot detect version mismatch for <= SSL2
-
-                    if ((buffer[0] & 0x80) != 0)
-                    {
-                        // Two bytes
-                        payloadSize = (((buffer[0] & 0x7f) << 8) | buffer[1]) + 2;
-                    }
-                    else
-                    {
-                        // Three bytes
-                        payloadSize = (((buffer[0] & 0x3f) << 8) | buffer[1]) + 3;
-                    }
-
-                    break;
-                case Framing.SinceSSL3:
-                    payloadSize = ((buffer[3] << 8) | buffer[4]) + 5;
-                    break;
-            }
-
-            return payloadSize;
         }
 
 #if NETCOREAPP || NETSTANDARD_2_0_GREATER

@@ -37,6 +37,8 @@ namespace DotNetty.Handlers.Tls
 
     public sealed class ClientTlsSettings : TlsSettings
     {
+        private static readonly Func<X509Certificate, X509Chain, SslPolicyErrors, bool> s_serverCertificateValidation = (_, __, ___) => true;
+
         public ClientTlsSettings(string targetHost)
           : this(targetHost, new List<X509Certificate>())
         {
@@ -82,12 +84,10 @@ namespace DotNetty.Handlers.Tls
 
         public Func<X509Certificate, X509Chain, SslPolicyErrors, bool> ServerCertificateValidation { get; set; }
 
-        /// <summary>
-        /// Overrides the current <see cref="ServerCertificateValidation"/> callback and allows any server certificate.
-        /// </summary>
+        /// <summary>Overrides the current <see cref="ServerCertificateValidation"/> callback and allows any server certificate.</summary>
         public void AllowAnyServerCertificate()
         {
-            ServerCertificateValidation = (_, __, ___) => true;
+            ServerCertificateValidation = s_serverCertificateValidation;
         }
 
 #if NETCOREAPP_2_0_GREATER || NETSTANDARD_2_0_GREATER
