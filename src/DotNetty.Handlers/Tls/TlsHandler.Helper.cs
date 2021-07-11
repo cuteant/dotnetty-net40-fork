@@ -207,6 +207,32 @@ namespace DotNetty.Handlers.Tls
 
         #endregion
 
+        #region ** enum Framing **
+
+        private enum Framing
+        {
+            Unknown = 0,    // Initial before any frame is processd.
+            BeforeSSL3,     // SSlv2
+            SinceSSL3,      // SSlv3 & TLS
+            Unified,        // Intermediate on first frame until response is processes.
+            Invalid         // Somthing is wrong.
+        }
+
+        #endregion
+
+        #region ** enum ContentType **
+
+        // SSL3/TLS protocol frames definitions.
+        private enum ContentType : byte
+        {
+            ChangeCipherSpec = 20,
+            Alert = 21,
+            Handshake = 22,
+            AppData = 23
+        }
+
+        #endregion
+
         #region ** DetectFraming **
 
         [MethodImpl(MethodImplOptions.NoInlining)]
