@@ -101,7 +101,7 @@ namespace DotNetty.Handlers.Tls
                 packetLength = GetFrameSize(_framing, input);
                 if ((uint)packetLength > SharedConstants.TooBigOrNegative) // < 0
                 {
-                    HandleInvalidTlsFrameSize(input);
+                    HandleInvalidTlsFrameSize(context, input);
                 }
                 Debug.Assert(packetLength > 0);
                 if (packetLength > readableBytes)
@@ -177,10 +177,15 @@ namespace DotNetty.Handlers.Tls
                     // there was a read pending already, so we make sure we completed that first
                     if (currentReadFuture.IsCompleted)
                     {
+                        if (currentReadFuture.IsFaulted || currentReadFuture.IsCanceled)
+                        {
+                            ExceptionDispatchInfo.Capture(currentReadFuture.Exception.InnerException).Throw();
+                        }
                         int read = currentReadFuture.Result;
                         if (0u >= (uint)read)
                         {
                             // Stream closed
+                            NotifyClosePromise(null);
                             return;
                         }
 
@@ -212,6 +217,10 @@ namespace DotNetty.Handlers.Tls
                             }
                         }
                     }
+                    else
+                    {
+                        Debug.WriteLine("first error");
+                    }
                 }
                 else
                 {
@@ -229,11 +238,16 @@ namespace DotNetty.Handlers.Tls
                     if (currentReadFuture is object)
                     {
                         if (!currentReadFuture.IsCompleted) { break; }
+                        if (currentReadFuture.IsFaulted || currentReadFuture.IsCanceled)
+                        {
+                            ExceptionDispatchInfo.Capture(currentReadFuture.Exception.InnerException).Throw();
+                        }
                         int read = currentReadFuture.Result;
 
                         if (0u >= (uint)read)
                         {
                             // Stream closed
+                            NotifyClosePromise(null);
                             return;
                         }
 
@@ -275,7 +289,7 @@ namespace DotNetty.Handlers.Tls
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private void HandleInvalidTlsFrameSize(IByteBuffer input)
+        private void HandleInvalidTlsFrameSize(IChannelHandlerContext context, IByteBuffer input)
         {
             // Not an SSL/TLS packet
             var ex = GetNotSslRecordException(input);
@@ -283,7 +297,7 @@ namespace DotNetty.Handlers.Tls
 
             // First fail the handshake promise as we may need to have access to the SSLEngine which may
             // be released because the user will remove the SslHandler in an exceptionCaught(...) implementation.
-            HandleFailure(ex);
+            HandleFailure(context, ex);
             throw ex;
         }
 
@@ -292,6 +306,15 @@ namespace DotNetty.Handlers.Tls
         {
             try
             {
+                // We should attempt to notify the handshake failure before writing any pending data. If we are in unwrap
+                // and failed during the handshake process, and we attempt to wrap, then promises will fail, and if
+                // listeners immediately close the Channel then we may end up firing the handshake event after the Channel
+                // has been closed.
+                if (_handshakePromise.TrySetException(cause))
+                {
+                    context.FireUserEventTriggered(new TlsHandshakeCompletionEvent(cause));
+                }
+
                 // We need to flush one time as there may be an alert that we should send to the remote peer because
                 // of the SSLException reported here.
                 WrapAndFlush(context);
@@ -307,7 +330,8 @@ namespace DotNetty.Handlers.Tls
             //}
             finally
             {
-                HandleFailure(cause);
+                // ensure we always flush and close the channel.
+                HandleFailure(context, cause, true, false, true);
             }
             ExceptionDispatchInfo.Capture(cause).Throw();
         }

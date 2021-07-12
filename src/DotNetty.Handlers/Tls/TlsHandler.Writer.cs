@@ -93,7 +93,7 @@ namespace DotNetty.Handlers.Tls
             catch (Exception cause)
             {
                 // Fail pending writes.
-                HandleFailure(cause);
+                HandleFailure(context, cause, true, false, true);
                 ExceptionDispatchInfo.Capture(cause).Throw();
             }
         }
@@ -176,10 +176,13 @@ namespace DotNetty.Handlers.Tls
                             buf.Release();
                         }
                     }
-                    catch (Exception)
+                    catch (Exception exc)
                     {
                         buf.Release();
-                        promise.TrySetException(s_sslStreamClosedException);
+                        promise.TrySetException(exc);
+                        // SslStream has been closed already.
+                        // Any further write attempts should be denied.
+                        _pendingUnencryptedWrites?.ReleaseAndFailAll(exc);
                         throw;
                     }
                     finally
